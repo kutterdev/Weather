@@ -68,9 +68,8 @@ async def pull_forecasts_once() -> None:
 
 
 async def pull_polymarket_once() -> None:
-    raw = await polymarket.list_active_markets()
-    matches = polymarket.filter_weather_temp_markets(raw)
-    log.info("Polymarket active=%d weather_temp_matches=%d", len(raw), len(matches))
+    matches = await polymarket.list_active_markets()
+    log.info("Polymarket weather_temp_matches=%d", len(matches))
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with connect() as conn:

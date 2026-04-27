@@ -168,3 +168,9 @@ Default thresholds in `config.Settings`:
   The temp-keyword regex also doesn't match a bare "60-64F" (needs
   °, "high", "deg", or similar), so even bucket-only questions fail
   on text alone.
+- Primary source for daily temp markets is `/events?tag_slug=temperature`,
+  not `/markets`. Sub-market bucket lives in `groupItemTitle`, not
+  `question`. City + date live on the parent event title/slug. The
+  /markets-based path is kept as `list_active_markets_legacy` plus
+  `filter_weather_temp_markets` in case the events endpoint changes
+  shape, but it is best-effort against today's market layout.

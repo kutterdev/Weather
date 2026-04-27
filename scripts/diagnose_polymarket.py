@@ -101,16 +101,24 @@ async def list_all() -> list[dict[str, Any]]:
     return out
 
 
-async def events_weather() -> list[dict[str, Any]]:
-    try:
-        batch = await wb_http.get_json(
-            f"{settings.polymarket_gamma_url}/events",
-            params={"tag_slug": "weather", "closed": "false", "limit": 100},
-        )
-        return batch if isinstance(batch, list) else []
-    except Exception as e:
-        print(f"events?tag_slug=weather failed: {e}")
-        return []
+async def events_temperature() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for page in range(5):
+        try:
+            batch = await wb_http.get_json(
+                f"{settings.polymarket_gamma_url}/events",
+                params={"tag_slug": "temperature", "closed": "false",
+                        "limit": 100, "offset": page * 100},
+            )
+        except Exception as e:
+            print(f"events?tag_slug=temperature page={page} failed: {e}")
+            break
+        if not isinstance(batch, list) or not batch:
+            break
+        out.extend(batch)
+        if len(batch) < 100:
+            break
+    return out
 
 
 async def main() -> None:
@@ -157,22 +165,39 @@ async def main() -> None:
             txt = c["text"].get(f, "")
             print(f"   {kind:7s} {term!r:>14} in {f}: {txt[:120]!r}")
 
-    print("\n=== /events tag_slug=weather ===")
-    evs = await events_weather()
+    print("\n=== /events tag_slug=temperature ===")
+    evs = await events_temperature()
     print(f"events returned: {len(evs)}")
-    for e in evs[:10]:
+    for e in evs[:25]:
         title = e.get("title")
         slug = e.get("slug")
         n_sub = len(e.get("markets") or [])
         print(f"  - title={title!r}  slug={slug!r}  markets={n_sub}")
     if evs:
-        # Show sub-market questions for the first weather event.
+        # Show sub-market labels for the first temperature event.
         first = evs[0]
         subs = first.get("markets") or []
         print(f"\nFirst event sub-markets ({len(subs)}):")
-        for sm in subs[:10]:
+        for sm in subs[:15]:
             print(f"   q={(sm.get('question') or '')!r}  "
                   f"groupItemTitle={(sm.get('groupItemTitle') or '')!r}")
+
+    # Run our parser end-to-end and show what we'd actually ingest.
+    from weather_bot.data import polymarket as wb_poly
+    parsed: list = []
+    for ev in evs:
+        parsed.extend(wb_poly.parse_temperature_event(ev))
+    print(f"\nparse_temperature_event total sub-markets parsed: {len(parsed)}")
+    by_station: Counter[str] = Counter()
+    for p in parsed:
+        by_station[p.station or "?"] += 1
+    print(f"by station: {dict(by_station.most_common())}")
+    if parsed:
+        print("\nFirst 15 parsed PolyMarkets:")
+        for p in parsed[:15]:
+            print(f"  station={p.station} target={p.target_date} "
+                  f"bucket={p.bucket_kind}({p.bucket_low_f}, {p.bucket_high_f}) "
+                  f"yes={str(p.yes_token_id)[:18]} q={p.question[:50]!r}")
 
 
 if __name__ == "__main__":

@@ -160,12 +160,50 @@ def _extract_token_ids(market_raw: dict[str, Any]) -> tuple[str | None, str | No
     return (yes_id, no_id)
 
 
-async def list_active_markets(
+async def list_temperature_events(
+    *,
+    page_size: int = 100,
+    max_pages: int = 5,
+) -> list[dict[str, Any]]:
+    """Page Gamma's /events endpoint for active weather temperature events.
+
+    Polymarket weather temperature markets are multi-outcome events: one
+    event per (city, target date) carrying the city/date in `title` and
+    `slug`, with a list of binary sub-markets in `markets`. The bucket
+    label lives on each sub-market's `groupItemTitle`. The /markets
+    endpoint loses this context, so we hit /events with `tag_slug=temperature`.
+    """
+    url = f"{settings.polymarket_gamma_url}/events"
+    out: list[dict[str, Any]] = []
+    for page in range(max_pages):
+        params = {
+            "closed": "false",
+            "tag_slug": "temperature",
+            "limit": page_size,
+            "offset": page * page_size,
+        }
+        batch = await wb_http.get_json(url, params=params)
+        if not isinstance(batch, list) or not batch:
+            break
+        out.extend(batch)
+        if len(batch) < page_size:
+            break
+    return out
+
+
+async def list_active_markets_legacy(
     *,
     page_size: int = 100,
     max_pages: int = 10,
 ) -> list[dict[str, Any]]:
-    """Page through Gamma's /markets endpoint for active, open markets."""
+    """Fallback: page Gamma's /markets endpoint for active, open markets.
+
+    Kept in case the /events?tag_slug=temperature endpoint changes shape
+    or is taken down. Pair with `filter_weather_temp_markets` to get the
+    same PolyMarket output as the primary path. The filter is brittle
+    against the current event-shape weather markets (sub-market
+    `question` fields drop the city), so this is best-effort only.
+    """
     url = f"{settings.polymarket_gamma_url}/markets"
     out: list[dict[str, Any]] = []
     for page in range(max_pages):
@@ -181,6 +219,105 @@ async def list_active_markets(
         out.extend(batch)
         if len(batch) < page_size:
             break
+    return out
+
+
+async def list_active_markets(
+    *,
+    page_size: int = 100,
+    max_pages: int = 5,
+) -> list[PolyMarket]:
+    """Primary: pull weather temperature sub-markets via /events?tag_slug=temperature.
+
+    Returns one PolyMarket per parsed sub-market, with the city's station
+    and target date inherited from the parent event. Events whose city is
+    not in our station mapping are skipped (and logged at INFO).
+    """
+    events = await list_temperature_events(page_size=page_size, max_pages=max_pages)
+    log.info("temperature events fetched: %d", len(events))
+    out: list[PolyMarket] = []
+    for ev in events:
+        out.extend(parse_temperature_event(ev))
+    log.info("temperature sub-markets parsed: %d", len(out))
+    return out
+
+
+# Cities present on Polymarket today that we do not yet have a resolving
+# station for. Logged when we encounter them so we can see the coverage
+# we're leaving on the table, but not parsed (would forecast against the
+# wrong station and miscalibrate every decision).
+INTERNATIONAL_CITY_HINTS: tuple[str, ...] = (
+    "Tokyo", "Shanghai", "Hong Kong", "Seoul",
+    "London", "Paris", "Toronto", "Taipei",
+)
+
+
+def parse_temperature_event(event: dict[str, Any]) -> list[PolyMarket]:
+    """Convert one /events payload into one PolyMarket per sub-market.
+
+    The event `title` carries the city ("Highest temperature in NYC on
+    April 28?") and the date. Each sub-market in `event.markets[]` has
+    the bucket on `groupItemTitle` (e.g. "60-61°F", "92°F or higher").
+    Events for cities we do not yet have a resolving station for are
+    skipped with an INFO log.
+    """
+    title = (event.get("title") or "").strip()
+    slug = (event.get("slug") or "").strip()
+    end_date = event.get("endDate") or event.get("end_date_iso")
+
+    city = _match_city(title) or _match_city(slug)
+    if city is None:
+        for intl in INTERNATIONAL_CITY_HINTS:
+            if re.search(rf"\b{re.escape(intl)}\b", title, re.IGNORECASE) or \
+               re.search(rf"\b{re.escape(intl)}\b", slug, re.IGNORECASE):
+                log.info(
+                    "skipped: no station mapping yet for %s (event slug=%s)",
+                    intl, slug,
+                )
+                return []
+        log.info(
+            "skipped: no station mapping (event slug=%s, title=%r)",
+            slug, title,
+        )
+        return []
+
+    target_date = _extract_target_date(event, title) or _extract_target_date(event, slug)
+
+    sub_markets = event.get("markets") or []
+    out: list[PolyMarket] = []
+    for sm in sub_markets:
+        if not isinstance(sm, dict):
+            continue
+        bucket_label = (sm.get("groupItemTitle") or sm.get("question") or "").strip()
+        kind, lo, hi = _parse_bucket(bucket_label)
+        if kind is None:
+            log.debug("unparseable bucket label %r in event %s", bucket_label, slug)
+            continue
+        yes_id, no_id = _extract_token_ids(sm)
+        market_id = (
+            sm.get("conditionId")
+            or sm.get("condition_id")
+            or sm.get("id")
+            or sm.get("slug")
+        )
+        if market_id is None:
+            continue
+        out.append(
+            PolyMarket(
+                market_id=str(market_id),
+                slug=sm.get("slug") or "",
+                question=sm.get("question") or bucket_label,
+                station=city.station,
+                target_date=target_date,
+                bucket_kind=kind,
+                bucket_low_f=lo,
+                bucket_high_f=hi,
+                end_date_iso=sm.get("endDate") or end_date,
+                yes_token_id=yes_id,
+                no_token_id=no_id,
+                raw=sm,
+            )
+        )
     return out
 
 

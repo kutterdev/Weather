@@ -91,10 +91,8 @@ def cmd_list_markets(
 ) -> None:
     """List active Polymarket weather temperature markets."""
     configure_logging("cli")
-    raw = asyncio.run(polymarket.list_active_markets())
-    matches = polymarket.filter_weather_temp_markets(raw)
-    rprint(f"[bold]Active markets total:[/bold] {len(raw)}   "
-           f"[bold]weather temp matches:[/bold] {len(matches)}")
+    matches = asyncio.run(polymarket.list_active_markets())
+    rprint(f"[bold]weather temperature sub-markets:[/bold] {len(matches)}")
     if not matches:
         rprint("[yellow]No matching markets right now.[/yellow]")
         return

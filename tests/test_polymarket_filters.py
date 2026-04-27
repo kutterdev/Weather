@@ -100,3 +100,100 @@ def test_filter_extracts_market_id_and_tokens() -> None:
     assert m.yes_token_id == "tok-yes"
     assert m.no_token_id == "tok-no"
     assert m.target_date == "2026-04-29"
+
+
+def test_parse_temperature_event_nyc() -> None:
+    event = {
+        "id": 999,
+        "slug": "highest-temperature-in-nyc-on-april-28",
+        "title": "Highest temperature in NYC on April 28?",
+        "endDate": "2026-04-29T00:00:00Z",
+        "markets": [
+            {
+                "id": 1001,
+                "conditionId": "0xa1",
+                "slug": "nyc-april-28-60-61",
+                "groupItemTitle": "60-61°F",
+                "outcomes": '["Yes","No"]',
+                "clobTokenIds": '["t1y","t1n"]',
+            },
+            {
+                "id": 1002,
+                "conditionId": "0xa2",
+                "slug": "nyc-april-28-92-or-higher",
+                "groupItemTitle": "92°F or higher",
+                "outcomes": '["Yes","No"]',
+                "clobTokenIds": '["t2y","t2n"]',
+            },
+            {
+                "id": 1003,
+                "conditionId": "0xa3",
+                "slug": "nyc-april-28-below-60",
+                "groupItemTitle": "below 60°F",
+                "outcomes": '["Yes","No"]',
+                "clobTokenIds": '["t3y","t3n"]',
+            },
+        ],
+    }
+    out = polymarket.parse_temperature_event(event)
+    assert len(out) == 3
+    assert {m.station for m in out} == {"KLGA"}
+    assert {m.target_date for m in out} == {"2026-04-29"}
+    by_id = {m.market_id: m for m in out}
+    assert by_id["0xa1"].bucket_kind == "range"
+    assert by_id["0xa1"].bucket_low_f == 60.0
+    assert by_id["0xa1"].bucket_high_f == 61.0
+    assert by_id["0xa1"].yes_token_id == "t1y"
+    assert by_id["0xa2"].bucket_kind == "above"
+    assert by_id["0xa2"].bucket_low_f == 92.0
+    assert by_id["0xa2"].bucket_high_f is None
+    assert by_id["0xa3"].bucket_kind == "below"
+    assert by_id["0xa3"].bucket_high_f == 60.0
+
+
+def test_parse_temperature_event_skips_unparseable_bucket() -> None:
+    event = {
+        "title": "Highest temperature in Chicago on April 28?",
+        "slug": "highest-temperature-in-chicago-on-april-28",
+        "markets": [
+            {"conditionId": "0xb1", "groupItemTitle": "60-61°F",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+            {"conditionId": "0xb2", "groupItemTitle": "weird label",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+        ],
+    }
+    out = polymarket.parse_temperature_event(event)
+    assert len(out) == 1
+    assert out[0].market_id == "0xb1"
+    assert out[0].station == "KORD"
+
+
+def test_parse_temperature_event_skips_international(caplog) -> None:
+    event = {
+        "title": "Highest temperature in Tokyo on April 28?",
+        "slug": "highest-temperature-in-tokyo-on-april-28",
+        "markets": [
+            {"conditionId": "0xc1", "groupItemTitle": "60-61°F",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+        ],
+    }
+    with caplog.at_level("INFO", logger="weather_bot.polymarket"):
+        out = polymarket.parse_temperature_event(event)
+    assert out == []
+    assert any("Tokyo" in rec.getMessage() and "no station mapping yet"
+               in rec.getMessage() for rec in caplog.records)
+
+
+def test_parse_temperature_event_unknown_city_skipped(caplog) -> None:
+    event = {
+        "title": "Highest temperature in Reykjavik on April 28?",
+        "slug": "highest-temperature-in-reykjavik-on-april-28",
+        "markets": [
+            {"conditionId": "0xd1", "groupItemTitle": "60-61°F",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+        ],
+    }
+    with caplog.at_level("INFO", logger="weather_bot.polymarket"):
+        out = polymarket.parse_temperature_event(event)
+    assert out == []
+    assert any("no station mapping" in rec.getMessage() for rec in caplog.records)
