@@ -42,6 +42,12 @@ uv sync
 uv run weather-bot init           # creates data/weather_bot.db
 ```
 
+After every `git pull` on a branch with code changes, re-run `uv sync`
+before running CLI commands. The editable install relinks the
+`weather-bot` entry point and any new dependencies; without it, you'll
+see `ModuleNotFoundError: No module named 'weather_bot'` or stale
+behavior.
+
 ## Run
 
 ```bash

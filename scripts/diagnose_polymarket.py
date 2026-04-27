@@ -101,6 +101,110 @@ async def list_all() -> list[dict[str, Any]]:
     return out
 
 
+async def fetch_event_by_slug(slug: str) -> list[dict[str, Any]]:
+    """Look up a single event by slug. Gamma returns either a list or
+    a single object depending on the endpoint variant; tolerate both.
+    """
+    try:
+        result = await wb_http.get_json(
+            f"{settings.polymarket_gamma_url}/events",
+            params={"slug": slug},
+        )
+    except Exception as e:
+        print(f"  events?slug={slug!r} ERROR {e}")
+        return []
+    if isinstance(result, dict):
+        return [result]
+    if isinstance(result, list):
+        return result
+    return []
+
+
+async def probe_tag_slug(tag: str) -> int:
+    try:
+        result = await wb_http.get_json(
+            f"{settings.polymarket_gamma_url}/events",
+            params={"tag_slug": tag, "closed": "false", "limit": 100},
+        )
+    except Exception as e:
+        print(f"  tag_slug={tag!r}: ERROR {e}")
+        return -1
+    n = len(result) if isinstance(result, list) else 0
+    print(f"  tag_slug={tag!r}: {n} events")
+    return n
+
+
+async def search_query(q: str, limit: int = 50) -> list[dict[str, Any]]:
+    try:
+        result = await wb_http.get_json(
+            f"{settings.polymarket_gamma_url}/events",
+            params={"q": q, "closed": "false", "limit": limit},
+        )
+    except Exception as e:
+        print(f"  q={q!r} ERROR {e}")
+        return []
+    return result if isinstance(result, list) else []
+
+
+async def discover_tag() -> list[str]:
+    """Pull a known weather event by slug, dump its shape, and return
+    the tag slugs found on it (so the caller can probe each)."""
+    print("=== tag discovery: known event by slug ===")
+    candidate_slugs = [
+        "highest-temperature-in-dallas-on-april-28-2026",
+        "highest-temperature-in-dallas-on-april-28",
+    ]
+    found: list[dict[str, Any]] = []
+    for cs in candidate_slugs:
+        print(f"\n  trying slug={cs!r}")
+        evs = await fetch_event_by_slug(cs)
+        print(f"    -> {len(evs)} event(s)")
+        if evs:
+            found = evs
+            break
+
+    discovered_tag_slugs: list[str] = []
+    if not found:
+        print("\n  No event found by either Dallas slug. The market may have")
+        print("  a different slug shape; pass one in via env or hard-code below.")
+        return discovered_tag_slugs
+
+    ev = found[0]
+    print("\n  --- event keys ---")
+    print(f"  {sorted(ev.keys())}")
+
+    print("\n  --- event.tags ---")
+    tags = ev.get("tags") or []
+    if isinstance(tags, list):
+        for t in tags:
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("id")
+            label = t.get("label") or t.get("name")
+            slug = t.get("slug")
+            print(f"    id={tid!r}  label={label!r}  slug={slug!r}")
+            if isinstance(slug, str):
+                discovered_tag_slugs.append(slug)
+    else:
+        print(f"  (tags is not a list: {type(tags).__name__})")
+
+    print("\n  --- event.markets[0] ---")
+    subs = ev.get("markets") or []
+    if subs and isinstance(subs[0], dict):
+        sm0 = subs[0]
+        print(f"  keys: {sorted(sm0.keys())}")
+        print(f"  groupItemTitle={sm0.get('groupItemTitle')!r}")
+        print(f"  question={sm0.get('question')!r}")
+        print(f"  clobTokenIds={sm0.get('clobTokenIds')!r}")
+        print(f"  outcomes={sm0.get('outcomes')!r}")
+        print(f"  conditionId={sm0.get('conditionId')!r}")
+    else:
+        print(f"  (no sub-markets: markets={subs!r})")
+
+    print(f"\n  total sub-markets on this event: {len(subs)}")
+    return discovered_tag_slugs
+
+
 async def events_temperature() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for page in range(5):
@@ -122,8 +226,33 @@ async def events_temperature() -> list[dict[str, Any]]:
 
 
 async def main() -> None:
+    # 0. Tag discovery first; this is what we actually need today.
+    discovered = await discover_tag()
+
+    print("\n=== tag probe ===")
+    seen: set[str] = set()
+    candidates = list(discovered) + [
+        "temperature", "daily-temperature", "temperature-daily",
+        "weather-temperature", "highest-temperature", "weather",
+    ]
+    for tag in candidates:
+        if tag in seen:
+            continue
+        seen.add(tag)
+        await probe_tag_slug(tag)
+
+    print("\n=== free-text search: q=highest+temperature ===")
+    res = await search_query("highest temperature", limit=50)
+    print(f"events returned: {len(res)}")
+    for e in res[:25]:
+        title = e.get("title")
+        slug = e.get("slug")
+        n_sub = len(e.get("markets") or [])
+        print(f"  - title={title!r}  slug={slug!r}  markets={n_sub}")
+
+    # 1. Original /markets cross-field scan, kept as a backstop.
     markets = await list_all()
-    print(f"=== /markets active=true closed=false: {len(markets)} markets ===\n")
+    print(f"\n=== /markets active=true closed=false: {len(markets)} markets ===\n")
 
     print("--- First 50 questions (with neighbour fields) ---")
     for i, m in enumerate(markets[:50]):
