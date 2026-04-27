@@ -88,16 +88,36 @@ _ABOVE_RE = re.compile(r"(?:above|over|more than|>=?)\s*(\d{2,3})\s*(?:°\s?F|F\
 _BELOW_RE = re.compile(r"(?:below|under|less than|<=?)\s*(\d{2,3})\s*(?:°\s?F|F\b)?", re.IGNORECASE)
 _EXACT_RE = re.compile(r"\b(?:exactly|equal to)?\s*(\d{2,3})\s*(?:°\s?F|F\b)\b", re.IGNORECASE)
 
+# Tail-bucket phrasings where the number comes first and the qualifier
+# follows. Polymarket weather markets use these for the open-ended top
+# and bottom buckets, e.g. "92°F or higher", "60°F or below", "92F+".
+_TAIL_HIGH_RE = re.compile(
+    r"(\d{2,3})\s*(?:°\s?F|F)?\s*(?:\+|(?:or|and)\s+(?:higher|above|more|greater|over))",
+    re.IGNORECASE,
+)
+_TAIL_LOW_RE = re.compile(
+    r"(\d{2,3})\s*(?:°\s?F|F)?\s*(?:or|and)\s+(?:lower|below|less|fewer|under)",
+    re.IGNORECASE,
+)
+
 
 def _parse_bucket(question: str) -> tuple[str | None, float | None, float | None]:
     """Best-effort bucket parser. Real markets use varied phrasing.
 
     Returns (bucket_kind, low_f, high_f). For 'above X' the high bound is None
     and low is X (inclusive). For 'below X' the low is None and high is X.
+
+    Tail-bucket phrasings ("92°F or higher", "60°F or below") are tried
+    before the prefix forms because they are more specific and would
+    otherwise be partially matched by the bare-number _EXACT_RE.
     """
     if (m := _RANGE_RE.search(question)):
         lo, hi = float(m.group(1)), float(m.group(2))
         return ("range", min(lo, hi), max(lo, hi))
+    if (m := _TAIL_HIGH_RE.search(question)):
+        return ("above", float(m.group(1)), None)
+    if (m := _TAIL_LOW_RE.search(question)):
+        return ("below", None, float(m.group(1)))
     if (m := _ABOVE_RE.search(question)):
         return ("above", float(m.group(1)), None)
     if (m := _BELOW_RE.search(question)):

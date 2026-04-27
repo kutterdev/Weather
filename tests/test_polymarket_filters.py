@@ -34,6 +34,44 @@ def test_no_match_unrelated_market() -> None:
     assert not polymarket._looks_like_weather_temp_market(q)
 
 
+def test_parse_live_groupitem_titles() -> None:
+    # Strings observed on the live Polymarket weather market UI.
+    cases = [
+        ("76-77°F",         "range", 76.0, 77.0),
+        ("78-79°F",         "range", 78.0, 79.0),
+        ("92°F or higher",  "above", 92.0, None),
+    ]
+    for label, kind, lo, hi in cases:
+        got_kind, got_lo, got_hi = polymarket._parse_bucket(label)
+        assert got_kind == kind, f"{label!r}: kind {got_kind!r}"
+        assert got_lo == lo, f"{label!r}: low {got_lo!r}"
+        assert got_hi == hi, f"{label!r}: high {got_hi!r}"
+
+
+def test_parse_tail_bucket_phrasings() -> None:
+    # Variants we want to accept for the open-ended top/bottom buckets.
+    above_cases = ["92°F or higher", "92F or above", "92 or higher",
+                   "92°F and above", "92F+"]
+    for q in above_cases:
+        kind, lo, hi = polymarket._parse_bucket(q)
+        assert kind == "above", f"{q!r}: kind {kind!r}"
+        assert lo == 92.0
+        assert hi is None
+
+    below_cases = ["60°F or lower", "60F or below", "60 or lower",
+                   "60°F and below"]
+    for q in below_cases:
+        kind, lo, hi = polymarket._parse_bucket(q)
+        assert kind == "below", f"{q!r}: kind {kind!r}"
+        assert lo is None
+        assert hi == 60.0
+
+    # Existing prefix forms still work.
+    kind, lo, hi = polymarket._parse_bucket("below 60F")
+    assert kind == "below"
+    assert hi == 60.0
+
+
 def test_filter_extracts_market_id_and_tokens() -> None:
     raw = [
         {

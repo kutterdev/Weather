@@ -19,6 +19,15 @@ class City:
 
 # Source: airport coordinates (approximate, sufficient for forecast lookup).
 # These are the stations Polymarket resolves on, per the contract rules.
+#
+# Station codes must match the exact resolution source on each market.
+# Several US cities have more than one ASOS-reporting airport (Dallas:
+# KDAL Love Field vs KDFW Dallas/Fort Worth; New York: KLGA vs KJFK vs
+# KEWR; Chicago: KORD vs KMDW; Houston: KIAH vs KHOU). Polymarket picks
+# one airport per market, so changing this code silently routes us to a
+# different station and miscalibrates every forecast and settlement for
+# that city. Verify against the resolution source on the market itself
+# before editing.
 CITIES: list[City] = [
     City("New York",   "KLGA", 40.7772, -73.8726, "America/New_York"),
     City("Chicago",    "KORD", 41.9786, -87.9048, "America/Chicago"),
