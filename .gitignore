@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv
+.uv/
+
+# Project data
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logs/
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Secrets (none expected in Phase 1, but be defensive)
+.env
+.env.*
+!.env.example
+secrets/
