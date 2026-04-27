@@ -183,3 +183,11 @@ Default thresholds in `config.Settings`:
   the daily city markets but may include other phrasings later.
   Prefer `event.eventDate` for the target date when present; fall
   back to parsing the title/slug for "Month DD" only if absent.
+- International station mappings in `cities.py` are educated guesses
+  based on each city's major hub (Tokyo: RJTT Haneda, not RJAA
+  Narita; Sao Paulo: SBGR Guarulhos, not SBSP Congonhas; Buenos
+  Aires: SAEZ Ezeiza, not SABE Aeroparque; London: EGLL Heathrow,
+  not EGLC City). Polymarket may resolve on a different station per
+  market. Verify against actual settlement outcomes before trusting
+  any international forecast/decision row, and update both `cities.py`
+  and any historical entries if a mismatch shows up.

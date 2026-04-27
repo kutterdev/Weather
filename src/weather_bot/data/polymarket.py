@@ -33,15 +33,26 @@ log = logging.getLogger("weather_bot.polymarket")
 
 # Phrases that map a market question to one of our tracked cities.
 # Order matters slightly: longer / more specific aliases first.
+#
+# Polymarket text appears in two shapes we need to match:
+#   - title:  "Highest temperature in San Francisco on April 28?"
+#   - slug:   "highest-temperature-in-san-francisco-on-april-28"
+# We add a lowercase-hyphenated form for every multi-word city so the
+# slug path matches without a separate parser.
+_SHORT_FORMS: dict[str, set[str]] = {
+    "New York":       {"NYC", "New York City"},
+    "Los Angeles":    {"LA"},
+    "San Francisco":  {"SF"},
+    "Hong Kong":      {"HK"},
+}
 CITY_ALIASES: list[tuple[str, City]] = []
 for _c in CITIES:
-    aliases = {_c.name, _c.station}
-    if _c.name == "New York":
-        aliases.update({"NYC", "New York City"})
-    if _c.name == "Los Angeles":
-        aliases.update({"LA"})
-    for a in aliases:
-        CITY_ALIASES.append((a, _c))
+    _aliases = {_c.name, _c.station}
+    if " " in _c.name:
+        _aliases.add(_c.name.lower().replace(" ", "-"))
+    _aliases.update(_SHORT_FORMS.get(_c.name, set()))
+    for _a in _aliases:
+        CITY_ALIASES.append((_a, _c))
 CITY_ALIASES.sort(key=lambda x: -len(x[0]))
 
 
@@ -251,10 +262,11 @@ async def list_active_markets(
 # Cities present on Polymarket today that we do not yet have a resolving
 # station for. Logged when we encounter them so we can see the coverage
 # we're leaving on the table, but not parsed (would forecast against the
-# wrong station and miscalibrate every decision).
+# wrong station and miscalibrate every decision). Append a city here when
+# we see it appear in /events but lack a station mapping; remove when we
+# add it to cities.CITIES.
 INTERNATIONAL_CITY_HINTS: tuple[str, ...] = (
-    "Tokyo", "Shanghai", "Hong Kong", "Seoul",
-    "London", "Paris", "Toronto", "Taipei",
+    "Taipei",
 )
 
 

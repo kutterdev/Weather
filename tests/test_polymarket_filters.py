@@ -169,9 +169,13 @@ def test_parse_temperature_event_skips_unparseable_bucket() -> None:
 
 
 def test_parse_temperature_event_skips_international(caplog) -> None:
+    # Taipei is the only city left in INTERNATIONAL_CITY_HINTS after the
+    # coverage expansion. Once we add a station for it, swap this test
+    # for whatever the next unmapped Polymarket city is.
+    assert "Taipei" in polymarket.INTERNATIONAL_CITY_HINTS
     event = {
-        "title": "Highest temperature in Tokyo on April 28?",
-        "slug": "highest-temperature-in-tokyo-on-april-28",
+        "title": "Highest temperature in Taipei on April 28?",
+        "slug": "highest-temperature-in-taipei-on-april-28",
         "markets": [
             {"conditionId": "0xc1", "groupItemTitle": "60-61°F",
              "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
@@ -180,8 +184,25 @@ def test_parse_temperature_event_skips_international(caplog) -> None:
     with caplog.at_level("INFO", logger="weather_bot.polymarket"):
         out = polymarket.parse_temperature_event(event)
     assert out == []
-    assert any("Tokyo" in rec.getMessage() and "no station mapping yet"
+    assert any("Taipei" in rec.getMessage() and "no station mapping yet"
                in rec.getMessage() for rec in caplog.records)
+
+
+def test_parse_temperature_event_tokyo_now_parses() -> None:
+    # Tokyo is now mapped (RJTT). It should produce a PolyMarket, not skip.
+    # Bucket assumed °F here; if Polymarket actually publishes Celsius
+    # buckets for Tokyo we need a separate fix in _parse_bucket.
+    event = {
+        "title": "Highest temperature in Tokyo on April 28?",
+        "slug": "highest-temperature-in-tokyo-on-april-28",
+        "markets": [
+            {"conditionId": "0xtok", "groupItemTitle": "60-61°F",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+        ],
+    }
+    out = polymarket.parse_temperature_event(event)
+    assert len(out) == 1
+    assert out[0].station == "RJTT"
 
 
 def test_parse_temperature_event_unknown_city_skipped(caplog) -> None:
