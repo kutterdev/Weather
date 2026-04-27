@@ -163,7 +163,7 @@ def _extract_token_ids(market_raw: dict[str, Any]) -> tuple[str | None, str | No
 async def list_temperature_events(
     *,
     page_size: int = 100,
-    max_pages: int = 5,
+    max_pages: int = 8,
 ) -> list[dict[str, Any]]:
     """Page Gamma's /events endpoint for active weather temperature events.
 
@@ -171,14 +171,20 @@ async def list_temperature_events(
     event per (city, target date) carrying the city/date in `title` and
     `slug`, with a list of binary sub-markets in `markets`. The bucket
     label lives on each sub-market's `groupItemTitle`. The /markets
-    endpoint loses this context, so we hit /events with `tag_slug=temperature`.
+    endpoint loses this context, so we hit /events with
+    `tag_slug=daily-temperature`.
+
+    The right tag was discovered empirically: `tag_slug=temperature`
+    returns zero events; `tag_slug=daily-temperature` is the canonical
+    one. `highest-temperature` is an alias/superset; `weather` is too
+    broad (includes hurricanes, earthquakes, hottest-year markets).
     """
     url = f"{settings.polymarket_gamma_url}/events"
     out: list[dict[str, Any]] = []
     for page in range(max_pages):
         params = {
             "closed": "false",
-            "tag_slug": "temperature",
+            "tag_slug": "daily-temperature",
             "limit": page_size,
             "offset": page * page_size,
         }
@@ -225,9 +231,9 @@ async def list_active_markets_legacy(
 async def list_active_markets(
     *,
     page_size: int = 100,
-    max_pages: int = 5,
+    max_pages: int = 8,
 ) -> list[PolyMarket]:
-    """Primary: pull weather temperature sub-markets via /events?tag_slug=temperature.
+    """Primary: pull weather temperature sub-markets via /events?tag_slug=daily-temperature.
 
     Returns one PolyMarket per parsed sub-market, with the city's station
     and target date inherited from the parent event. Events whose city is
@@ -281,7 +287,20 @@ def parse_temperature_event(event: dict[str, Any]) -> list[PolyMarket]:
         )
         return []
 
-    target_date = _extract_target_date(event, title) or _extract_target_date(event, slug)
+    # Prefer the explicit event-level date when present; only fall back to
+    # parsing the title/slug for "Month DD" strings if it's missing.
+    target_date: str | None = None
+    event_date_raw = event.get("eventDate")
+    if isinstance(event_date_raw, str):
+        try:
+            target_date = (
+                datetime.fromisoformat(event_date_raw.replace("Z", "+00:00"))
+                .date().isoformat()
+            )
+        except ValueError:
+            target_date = None
+    if not target_date:
+        target_date = _extract_target_date(event, title) or _extract_target_date(event, slug)
 
     sub_markets = event.get("markets") or []
     out: list[PolyMarket] = []

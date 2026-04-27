@@ -197,3 +197,36 @@ def test_parse_temperature_event_unknown_city_skipped(caplog) -> None:
         out = polymarket.parse_temperature_event(event)
     assert out == []
     assert any("no station mapping" in rec.getMessage() for rec in caplog.records)
+
+
+def test_parse_temperature_event_prefers_eventDate() -> None:
+    # eventDate (May 1) should win over both the title's "April 28"
+    # and the endDate "May 2".
+    event = {
+        "title": "Highest temperature in NYC on April 28?",
+        "slug": "highest-temperature-in-nyc-on-april-28",
+        "eventDate": "2026-05-01",
+        "endDate": "2026-05-02T00:00:00Z",
+        "markets": [
+            {"conditionId": "0xz1", "groupItemTitle": "60-61°F",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+        ],
+    }
+    out = polymarket.parse_temperature_event(event)
+    assert len(out) == 1
+    assert out[0].target_date == "2026-05-01"
+
+
+def test_parse_temperature_event_eventDate_iso_datetime() -> None:
+    event = {
+        "title": "Highest temperature in NYC on April 28?",
+        "slug": "x",
+        "eventDate": "2026-05-01T00:00:00Z",
+        "markets": [
+            {"conditionId": "0xz2", "groupItemTitle": "60-61°F",
+             "outcomes": '["Yes","No"]', "clobTokenIds": '["x","y"]'},
+        ],
+    }
+    out = polymarket.parse_temperature_event(event)
+    assert len(out) == 1
+    assert out[0].target_date == "2026-05-01"

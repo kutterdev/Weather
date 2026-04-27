@@ -168,9 +168,18 @@ Default thresholds in `config.Settings`:
   The temp-keyword regex also doesn't match a bare "60-64F" (needs
   °, "high", "deg", or similar), so even bucket-only questions fail
   on text alone.
-- Primary source for daily temp markets is `/events?tag_slug=temperature`,
+- Primary source for daily temp markets is `/events?tag_slug=daily-temperature`,
   not `/markets`. Sub-market bucket lives in `groupItemTitle`, not
   `question`. City + date live on the parent event title/slug. The
   /markets-based path is kept as `list_active_markets_legacy` plus
   `filter_weather_temp_markets` in case the events endpoint changes
   shape, but it is best-effort against today's market layout.
+- Polymarket Gamma /events tag for daily city temperature markets
+  is `daily-temperature`, NOT `temperature` (which returns 0).
+  Discovered 2026-04-27 via tag-discovery probe on the Dallas event
+  payload. The Weather tag (slug=`weather`) is broader and includes
+  hurricanes, earthquakes, hottest-year markets, etc. The
+  `highest-temperature` slug is an alias/superset that also returns
+  the daily city markets but may include other phrasings later.
+  Prefer `event.eventDate` for the target date when present; fall
+  back to parsing the title/slug for "Month DD" only if absent.
