@@ -151,7 +151,7 @@ async def main() -> None:
     print("\n--- First 30 candidate matches ---")
     for c in candidates[:30]:
         m = c["market"]
-        print(f"id={m.get('id')} cond={m.get('conditionId')!s[:20]} "
+        print(f"id={m.get('id')} cond={str(m.get('conditionId'))[:20]} "
               f"q={(m.get('question') or '')!r}")
         for f, kind, term in c["hits"][:6]:
             txt = c["text"].get(f, "")
