@@ -154,4 +154,17 @@ Default thresholds in `config.Settings`:
 
 ## Gotchas
 
-(Empty. Append entries here as we hit real-world API quirks.)
+- 2026-04-27: Polymarket lister returns 1000 active markets but the
+  weather temperature filter matches zero. Diagnosis: weather markets
+  on Gamma are now multi-outcome events with sub-markets, where the
+  per-market `question` field is the bucket label (e.g. "60-65°F" or
+  just "Yes") and the city, date, and "highest temperature" context
+  live on the parent event. Our filter requires both a temp keyword
+  and a city alias inside the per-market `question`, so every
+  sub-market falls out. To fix: also scan `groupItemTitle`,
+  `events[].title`, `slug`, `description`, and `tags` per market, or
+  switch to `GET /events?tag_slug=weather` and walk the sub-markets
+  from there. See `scripts/diagnose_polymarket.py` for the probe.
+  The temp-keyword regex also doesn't match a bare "60-64F" (needs
+  °, "high", "deg", or similar), so even bucket-only questions fail
+  on text alone.
